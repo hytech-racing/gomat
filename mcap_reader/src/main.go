@@ -88,7 +88,7 @@ func main() {
 		fmt.Println("Error serializing data:", err)
 		os.Exit(1)
 	}
-	cmd := exec.Command("matlab_writer.py")
+	cmd := exec.Command("matlab_writer.py", "-p", file.Name())
 	cmd.Stdin = bytes.NewReader([]byte(jsonData))
 
 	output, err := cmd.CombinedOutput()
