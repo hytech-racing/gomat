@@ -17,6 +17,7 @@ import (
 func main() {
 	argsWithoutProg := os.Args[1:]
 
+	var firstTime *float64 = nil
 	mcapFilePath := argsWithoutProg[0]
 	file, err := os.Open(mcapFilePath)
 	if err != nil {
@@ -60,6 +61,11 @@ func main() {
 
 		signalValues := decodedMessage.Data
 
+		if firstTime == nil {
+			firstValue := float64(decodedMessage.LogTime) / 1e9
+			firstTime = &firstValue
+		}
+
 		if allSignalData[decodedMessage.Topic] == nil {
 			allSignalData[decodedMessage.Topic] = make(map[string][][]interface{})
 		}
@@ -68,7 +74,7 @@ func main() {
 			floatValue := getFloatValueOfInterface(value)
 			signalSlice := allSignalData[decodedMessage.Topic][signalName] // All signal data for one signal value.
 
-			timeSec := float64(decodedMessage.LogTime) / 1e9
+			timeSec := (float64(decodedMessage.LogTime) / 1e9) - *firstTime
 			singleRowToAdd := []interface{}{timeSec, floatValue}
 
 			signalSlice = append(signalSlice, singleRowToAdd)
@@ -82,7 +88,7 @@ func main() {
 		fmt.Println("Error serializing data:", err)
 		os.Exit(1)
 	}
-	cmd := exec.Command("python3", "python/matlab_writer.py")
+	cmd := exec.Command("matlab_writer.py")
 	cmd.Stdin = bytes.NewReader([]byte(jsonData))
 
 	output, err := cmd.CombinedOutput()

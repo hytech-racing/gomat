@@ -1,14 +1,16 @@
-from scipy._lib.doccer import sys
+#!/usr/bin/env python
+import sys
 from scipy.io import savemat
 import json
 
 def main():
     try:
         input_data = sys.stdin.read()
+        
         data = {"data": json.loads(input_data)}
 
         # Attempt to save the data as .mat
-        savemat("data.mat", data, long_field_names=True)
+        savemat("./data.mat", data, long_field_names=True)
         print("MATLAB file created successfully.")
 
     except json.JSONDecodeError as e:
