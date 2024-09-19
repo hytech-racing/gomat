@@ -1,6 +1,10 @@
 # gomat
 
-Raw MCAP to MATLAB converter.
+![go construction](https://miro.medium.com/v2/resize:fit:400/1*rAglkfLL1fv8JccizJ3W-Q.png)
+
+Raw MCAP to MATLAB converter written in Go.
+
+It takes all the raw values from an MCAP and writes a MATLAB file with them
 
 To run, enter the devshell:
 ```
