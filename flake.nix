@@ -33,6 +33,7 @@
             inputsFrom = [ pkgs.python_application ];
             packages = with pkgs; [
               # Development Tools
+              mcap-cli
               go_application
               python_application
               python311Packages.scipy
