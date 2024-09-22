@@ -17,3 +17,15 @@ src absolute/path/to/mcap/file
 
 The output file will be in the root directory.
 
+if you get:
+
+```
+<date> could not get mcap mesages
+```
+
+then you can try recovering the mcap file with (dont include the `<>` brackets for the names):
+
+
+```
+mcap recover <name-of-faulty-mcap>.mcap -o <new-recovered-name>.mcap
+```
