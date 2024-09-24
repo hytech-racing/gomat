@@ -12,12 +12,20 @@ import (
 	"strconv"
 
 	"raw-matlab-converter/utils"
+
+	"github.com/foxglove/mcap/go/mcap"
 )
+
+type Parser struct {
+	mcapUtils      *utils.McapUtils
+	allSignalData  map[string]map[string][][]interface{}
+	failedMessages [][2]interface{}
+	firstTime      *float64
+}
 
 func main() {
 	argsWithoutProg := os.Args[1:]
 
-	var firstTime *float64 = nil
 	mcapFilePath := argsWithoutProg[0]
 	file, err := os.Open(mcapFilePath)
 	if err != nil {
@@ -31,12 +39,19 @@ func main() {
 
 	reader, err := mcapUtils.NewReader(file)
 	if err != nil {
-		log.Fatalf("could not create mcap reader")
+		log.Fatalf("could not create mcap reader: %v", err)
 	}
 
 	message_iterator, err := reader.Messages()
 	if err != nil {
-		log.Fatalf("could not get mcap mesages")
+		log.Fatalf("could not get mcap mesages: %v", err)
+	}
+
+	parser := Parser{
+		mcapUtils:      utils.NewMcapUtils(),
+		allSignalData:  make(map[string]map[string][][]interface{}),
+		failedMessages: make([][2]interface{}, 0),
+		firstTime:      nil,
 	}
 
 	for {
@@ -54,32 +69,25 @@ func main() {
 			continue
 		}
 
-		decodedMessage, err := mcapUtils.GetDecodedMessage(schema, message)
+		newFailedMessage := make([][2]interface{}, 0)
+
+		for _, failedMessage := range parser.failedMessages {
+			err = parser.processMessage(failedMessage[0].(*mcap.Message), failedMessage[1].(*mcap.Schema))
+			if err != nil {
+				newFailedMessage = append(newFailedMessage, [2]interface{}{failedMessage[0], failedMessage[1]})
+			}
+		}
+
+		err = parser.processMessage(message, schema)
 		if err != nil {
-			log.Fatalf("could not decode message: %v", err)
+			parser.failedMessages = append(parser.failedMessages, [2]interface{}{message, schema})
 		}
 
-		signalValues := decodedMessage.Data
+		parser.failedMessages = newFailedMessage
+	}
 
-		if firstTime == nil {
-			firstValue := float64(decodedMessage.LogTime) / 1e9
-			firstTime = &firstValue
-		}
-
-		if allSignalData[decodedMessage.Topic] == nil {
-			allSignalData[decodedMessage.Topic] = make(map[string][][]interface{})
-		}
-
-		for signalName, value := range signalValues {
-			floatValue := getFloatValueOfInterface(value)
-			signalSlice := allSignalData[decodedMessage.Topic][signalName] // All signal data for one signal value.
-
-			timeSec := (float64(decodedMessage.LogTime) / 1e9) - *firstTime
-			singleRowToAdd := []interface{}{timeSec, floatValue}
-
-			signalSlice = append(signalSlice, singleRowToAdd)
-			allSignalData[decodedMessage.Topic][signalName] = signalSlice
-		}
+	if len(parser.failedMessages) != 0 {
+		fmt.Errorf("could not finish decoding all messages")
 	}
 
 	// Serialize to JSON
@@ -97,6 +105,38 @@ func main() {
 	}
 
 	fmt.Println(string(output))
+}
+
+func (p *Parser) processMessage(message *mcap.Message, schema *mcap.Schema) error {
+	decodedMessage, err := p.mcapUtils.GetDecodedMessage(schema, message)
+	if err != nil {
+		p.failedMessages = append(p.failedMessages, [2]interface{}{message, schema})
+		return fmt.Errorf("could not decode message: %v", err)
+	}
+
+	signalValues := decodedMessage.Data
+
+	if p.firstTime == nil {
+		firstValue := float64(decodedMessage.LogTime) / 1e9
+		p.firstTime = &firstValue
+	}
+
+	if p.allSignalData[decodedMessage.Topic] == nil {
+		p.allSignalData[decodedMessage.Topic] = make(map[string][][]interface{})
+	}
+
+	for signalName, value := range signalValues {
+		floatValue := getFloatValueOfInterface(value)
+		signalSlice := p.allSignalData[decodedMessage.Topic][signalName] // All signal data for one signal value.
+
+		timeSec := (float64(decodedMessage.LogTime) / 1e9) - *p.firstTime
+		singleRowToAdd := []interface{}{timeSec, floatValue}
+
+		signalSlice = append(signalSlice, singleRowToAdd)
+		p.allSignalData[decodedMessage.Topic][signalName] = signalSlice
+	}
+
+	return nil
 }
 
 func getFloatValueOfInterface(val interface{}) float64 {

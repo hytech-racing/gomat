@@ -12,22 +12,24 @@ import (
 // MCAP doesn't have a native protobuf wrapper for golang, so we have to
 // dynamically decode the schemas and messages
 
-type protobufUtils struct {
-	protoDescriptions map[string]*desc.FileDescriptor
+type ProtobufUtils struct {
+	protoDescriptions  map[string]*desc.FileDescriptor
+	protoDescriptorSet descriptorpb.FileDescriptorSet
 }
 
 type ProtobufMessage struct {
 	name string
 }
 
-func NewProtobufUtils() *protobufUtils {
-	return &protobufUtils{
-		protoDescriptions: make(map[string]*desc.FileDescriptor),
+func NewProtobufUtils() *ProtobufUtils {
+	return &ProtobufUtils{
+		protoDescriptions:  make(map[string]*desc.FileDescriptor),
+		protoDescriptorSet: descriptorpb.FileDescriptorSet{},
 	}
 }
 
-func (pb *protobufUtils) loadSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {
-	fdSet := &descriptorpb.FileDescriptorSet{}
+func (pb *ProtobufUtils) loadSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {
+	fdSet := &pb.protoDescriptorSet
 	if err := proto.Unmarshal(schema.Data, fdSet); err != nil {
 		return nil, fmt.Errorf("failed to parse schema data: %w", err)
 	}
@@ -46,7 +48,7 @@ func (pb *protobufUtils) loadSchema(schema *mcap.Schema) (*desc.FileDescriptor, 
 	return files[0], nil
 }
 
-func (pb *protobufUtils) GetDecodedSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {
+func (pb *ProtobufUtils) GetDecodedSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {
 	i, ok := pb.protoDescriptions[schema.Name]
 	if ok {
 		return i, nil

@@ -2,13 +2,14 @@ package utils
 
 import (
 	"fmt"
+	"io"
+
 	"github.com/foxglove/mcap/go/mcap"
 	"github.com/jhump/protoreflect/dynamic"
-	"io"
 )
 
-type mcapUtils struct {
-	pbUtils *protobufUtils
+type McapUtils struct {
+	pbUtils *ProtobufUtils
 }
 
 type DecodedMessage struct {
@@ -17,13 +18,13 @@ type DecodedMessage struct {
 	LogTime uint64
 }
 
-func NewMcapUtils() *mcapUtils {
-	return &mcapUtils{
+func NewMcapUtils() *McapUtils {
+	return &McapUtils{
 		pbUtils: NewProtobufUtils(),
 	}
 }
 
-func (m *mcapUtils) NewReader(r io.Reader) (*mcap.Reader, error) {
+func (m *McapUtils) NewReader(r io.Reader) (*mcap.Reader, error) {
 	reader, err := mcap.NewReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build reader: %w", err)
@@ -31,7 +32,7 @@ func (m *mcapUtils) NewReader(r io.Reader) (*mcap.Reader, error) {
 	return reader, nil
 }
 
-func (m *mcapUtils) GetDecodedMessage(schema *mcap.Schema, message *mcap.Message) (*DecodedMessage, error) {
+func (m *McapUtils) GetDecodedMessage(schema *mcap.Schema, message *mcap.Message) (*DecodedMessage, error) {
 	decodedSchema, err := m.pbUtils.GetDecodedSchema(schema)
 	if err != nil {
 		fmt.Errorf("Failed to load schema")
@@ -41,11 +42,12 @@ func (m *mcapUtils) GetDecodedMessage(schema *mcap.Schema, message *mcap.Message
 	messageDescriptor := decodedSchema.FindMessage(schema.Name)
 	if messageDescriptor == nil {
 		fmt.Errorf("Failed to find descriptor after loading pool")
+		return nil, err
 	}
 
 	dynMsg := dynamic.NewMessage(messageDescriptor)
 	if err := dynMsg.Unmarshal(message.Data); err != nil {
-		fmt.Errorf("Failed to parse message using included schema: %v", err)
+		return nil, fmt.Errorf("Failed to parse message using included schema: %v", err)
 	}
 
 	decodedMessage := DecodedMessage{
@@ -62,7 +64,7 @@ func (m *mcapUtils) GetDecodedMessage(schema *mcap.Schema, message *mcap.Message
 	return &decodedMessage, nil
 }
 
-func (m *mcapUtils) GetMcapSchemaList(reader *mcap.Reader) ([]string, error) {
+func (m *McapUtils) GetMcapSchemaList(reader *mcap.Reader) ([]string, error) {
 	mcapInfo, err := reader.Info()
 	if err != nil {
 		return nil, err
