@@ -35,8 +35,6 @@ func main() {
 	// utils copied over from data_acq_cloud
 	mcapUtils := utils.NewMcapUtils()
 
-	allSignalData := make(map[string]map[string][][]interface{})
-
 	reader, err := mcapUtils.NewReader(file)
 	if err != nil {
 		log.Fatalf("could not create mcap reader: %v", err)
@@ -91,7 +89,7 @@ func main() {
 	}
 
 	// Serialize to JSON
-	jsonData, err := json.Marshal(allSignalData)
+	jsonData, err := json.Marshal(parser.allSignalData)
 	if err != nil {
 		fmt.Println("Error serializing data:", err)
 		os.Exit(1)
