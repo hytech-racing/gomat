@@ -14,7 +14,7 @@ import (
 
 type ProtobufUtils struct {
 	protoDescriptions  map[string]*desc.FileDescriptor
-	protoDescriptorSet descriptorpb.FileDescriptorSet
+	protoDescriptorSet *descriptorpb.FileDescriptorSet
 }
 
 type ProtobufMessage struct {
@@ -24,28 +24,84 @@ type ProtobufMessage struct {
 func NewProtobufUtils() *ProtobufUtils {
 	return &ProtobufUtils{
 		protoDescriptions:  make(map[string]*desc.FileDescriptor),
-		protoDescriptorSet: descriptorpb.FileDescriptorSet{},
+		protoDescriptorSet: &descriptorpb.FileDescriptorSet{},
 	}
 }
 
 func (pb *ProtobufUtils) loadSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {
+	if schema.Name == "hytech_msgs.MCUCommandData" {
+		fmt.Println("")
+	}
+
 	fdSet := &pb.protoDescriptorSet
-	if err := proto.Unmarshal(schema.Data, fdSet); err != nil {
+	if err := proto.Unmarshal(schema.Data, *fdSet); err != nil {
 		return nil, fmt.Errorf("failed to parse schema data: %w", err)
 	}
 
-	files := make([]*desc.FileDescriptor, len(fdSet.GetFile()))
-	for i, fd := range fdSet.GetFile() {
-		file, err := desc.CreateFileDescriptor(fd)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create file descriptor for %s: %w", fd.GetName(), err)
+	//files := make([]*desc.FileDescriptor, len((*fdSet).GetFile()))
+	//success := false
+	//fileIdx := -1
+	//for i, fd := range (*fdSet).GetFile() {
+	//	file, err := desc.CreateFileDescriptor(fd)
+	//	if err != nil {
+	//		continue
+	//	}
+	//	success = true
+	//	files[i] = file
+	//	fileIdx = i
+	//	break
+	//}
+
+	fdSetFiles := (*fdSet).GetFile()
+	successfulFiles := make([]*desc.FileDescriptor, 0)
+	errFiles := make([]*descriptorpb.FileDescriptorProto, 0, len(fdSetFiles))
+	for range len(fdSetFiles) {
+		for _, fd := range fdSetFiles {
+			if len(successfulFiles) == len(fdSetFiles) {
+				break
+			}
+
+			if pb.protoDescriptions[fd.GetName()] != nil {
+				successfulFiles = append(successfulFiles, pb.protoDescriptions[fd.GetName()])
+				continue
+			}
+
+			file, err := desc.CreateFileDescriptor(fd, successfulFiles...)
+			if err != nil {
+				errFiles = append(errFiles, fd)
+				continue
+			}
+			successfulFiles = append(successfulFiles, file)
+			pb.protoDescriptions[fd.GetName()] = file
+
+			fdSetFiles = errFiles
 		}
-		files[i] = file
 	}
 
-	pb.protoDescriptions[schema.Name] = files[0]
+	if len(errFiles) != 0 {
+		return nil, fmt.Errorf("failed to create file descriptors for %v", errFiles)
+	}
 
-	return files[0], nil
+	if len(successfulFiles) == 0 {
+		return nil, nil
+	}
+
+	// To find the highestLevelFile, we need to find the one with the largest number of dependencies
+	maxDepLen := -1
+	var highestLevelFile *desc.FileDescriptor = nil
+	for _, succFile := range successfulFiles {
+		depLen := len(succFile.AsFileDescriptorProto().Dependency)
+		if depLen > maxDepLen {
+			highestLevelFile = succFile
+			maxDepLen = depLen
+		}
+	}
+
+	pb.protoDescriptions[schema.Name] = highestLevelFile
+	fdProto := highestLevelFile.AsFileDescriptorProto()
+	pb.protoDescriptorSet.File = append(pb.protoDescriptorSet.File, fdProto)
+
+	return highestLevelFile, nil
 }
 
 func (pb *ProtobufUtils) GetDecodedSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {

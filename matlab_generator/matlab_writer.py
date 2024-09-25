@@ -21,7 +21,7 @@ def main():
         data = {"data": json.loads(input_data)}
 
         # Attempt to save the data as .mat
-        savemat(f"./{file_name}.mat", data, long_field_names=True)
+        savemat(file_name=f"./{file_name}.mat", mdict=data, long_field_names=True)
         print("MATLAB file created successfully.")
 
     except json.JSONDecodeError as e:

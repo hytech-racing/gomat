@@ -64,6 +64,52 @@ func (m *McapUtils) GetDecodedMessage(schema *mcap.Schema, message *mcap.Message
 	return &decodedMessage, nil
 }
 
+func (m *McapUtils) LoadAllSchemas(info *mcap.Info) error {
+	schemas := info.Schemas
+	retrySchemas := make([]*mcap.Schema, 0)
+
+	for _, schema := range schemas {
+		retrySchemas = append(retrySchemas, schema)
+	}
+
+	maxRetries := len(retrySchemas) + 1
+	for range maxRetries {
+		if len(retrySchemas) == 0 {
+			break
+		}
+
+		newRetries := make([]*mcap.Schema, 0)
+		for _, schema := range retrySchemas {
+			_, err := m.pbUtils.GetDecodedSchema(schema)
+			if err != nil {
+				newRetries = append(newRetries, schema)
+			}
+		}
+
+		retrySchemas = newRetries
+	}
+
+	return nil
+}
+
+// func (m *McapUtils) parseDescriptor(b []byte) (*descriptorpb.FileDescriptorSet, error) {
+//     descriptor := &descriptorpb.FileDescriptorSet{}
+// 	if err := proto.Unmarshal(b, descriptor); err != nil {
+// 		return nil, err
+// 	}
+// 	return descriptor, nil
+// }
+//
+// func (m *McapUtils) LoadAllSchemas2(info *mcap.Info) error {
+// 	schemaList := info.Schemas
+//
+//     for i, schema := range schemaList {
+//         protoDescriptorSet :=
+//
+//
+//     }
+// }
+
 func (m *McapUtils) GetMcapSchemaList(reader *mcap.Reader) ([]string, error) {
 	mcapInfo, err := reader.Info()
 	if err != nil {

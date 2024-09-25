@@ -40,6 +40,11 @@ func main() {
 		log.Fatalf("could not create mcap reader: %v", err)
 	}
 
+	info, err := reader.Info()
+	if err != nil {
+		log.Fatalf("could not get mcap info: %v", err)
+	}
+
 	message_iterator, err := reader.Messages()
 	if err != nil {
 		log.Fatalf("could not get mcap mesages: %v", err)
@@ -52,6 +57,7 @@ func main() {
 		firstTime:      nil,
 	}
 
+	parser.mcapUtils.LoadAllSchemas(info)
 	for {
 		schema, channel, message, err := message_iterator.NextInto(nil)
 		if errors.Is(err, io.EOF) {
@@ -70,6 +76,9 @@ func main() {
 		newFailedMessage := make([][2]interface{}, 0)
 
 		for _, failedMessage := range parser.failedMessages {
+			if schema.Name == "hytech_msgs.MCUCommandData" {
+				//fmt.Println("")
+			}
 			err = parser.processMessage(failedMessage[0].(*mcap.Message), failedMessage[1].(*mcap.Schema))
 			if err != nil {
 				newFailedMessage = append(newFailedMessage, [2]interface{}{failedMessage[0], failedMessage[1]})
@@ -78,7 +87,7 @@ func main() {
 
 		err = parser.processMessage(message, schema)
 		if err != nil {
-			parser.failedMessages = append(parser.failedMessages, [2]interface{}{message, schema})
+			newFailedMessage = append(newFailedMessage, [2]interface{}{message, schema})
 		}
 
 		parser.failedMessages = newFailedMessage
@@ -112,6 +121,9 @@ func (p *Parser) processMessage(message *mcap.Message, schema *mcap.Schema) erro
 		return fmt.Errorf("could not decode message: %v", err)
 	}
 
+	if decodedMessage == nil || decodedMessage.Data == nil {
+		return fmt.Errorf("could not decode message: %v", decodedMessage)
+	}
 	signalValues := decodedMessage.Data
 
 	if p.firstTime == nil {
