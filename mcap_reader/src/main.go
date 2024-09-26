@@ -10,6 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
+
+	"github.com/jhump/protoreflect/dynamic"
 
 	"raw-matlab-converter/utils"
 
@@ -18,7 +21,7 @@ import (
 
 type Parser struct {
 	mcapUtils      *utils.McapUtils
-	allSignalData  map[string]map[string][][]interface{}
+	allSignalData  map[string]map[string]interface{}
 	failedMessages [][2]interface{}
 	firstTime      *float64
 }
@@ -52,7 +55,7 @@ func main() {
 
 	parser := Parser{
 		mcapUtils:      utils.NewMcapUtils(),
-		allSignalData:  make(map[string]map[string][][]interface{}),
+		allSignalData:  make(map[string]map[string]interface{}),
 		failedMessages: make([][2]interface{}, 0),
 		firstTime:      nil,
 	}
@@ -77,7 +80,7 @@ func main() {
 
 		for _, failedMessage := range parser.failedMessages {
 			if schema.Name == "hytech_msgs.MCUCommandData" {
-				//fmt.Println("")
+				// fmt.Println("")
 			}
 			err = parser.processMessage(failedMessage[0].(*mcap.Message), failedMessage[1].(*mcap.Schema))
 			if err != nil {
@@ -126,30 +129,95 @@ func (p *Parser) processMessage(message *mcap.Message, schema *mcap.Schema) erro
 	}
 	signalValues := decodedMessage.Data
 
+	// Some topics could be in the format of "hytech_msgs.MCUOutputData", but it's cleaner to just have MCUOutputData
+	trimmedTopicSlice := strings.Split(decodedMessage.Topic, ".")
+	trimmedTopic := trimmedTopicSlice[len(trimmedTopicSlice)-1]
+
 	if p.firstTime == nil {
 		firstValue := float64(decodedMessage.LogTime) / 1e9
 		p.firstTime = &firstValue
 	}
 
-	if p.allSignalData[decodedMessage.Topic] == nil {
-		p.allSignalData[decodedMessage.Topic] = make(map[string][][]interface{})
+	if p.allSignalData[trimmedTopic] == nil {
+		p.allSignalData[trimmedTopic] = make(map[string]interface{})
 	}
 
 	for signalName, value := range signalValues {
-		floatValue := getFloatValueOfInterface(value)
-		signalSlice := p.allSignalData[decodedMessage.Topic][signalName] // All signal data for one signal value.
-
-		timeSec := (float64(decodedMessage.LogTime) / 1e9) - *p.firstTime
-		singleRowToAdd := []interface{}{timeSec, floatValue}
-
-		signalSlice = append(signalSlice, singleRowToAdd)
-		p.allSignalData[decodedMessage.Topic][signalName] = signalSlice
+		p.processSignalValue(trimmedTopic, signalName, value, float64(decodedMessage.LogTime)/1e9)
 	}
 
 	return nil
 }
 
+func (p *Parser) processSignalValue(topic, signalName string, value interface{}, logTime float64) {
+	dynamicMessage, ok := value.(*dynamic.Message)
+	if ok {
+		if p.allSignalData[topic][signalName] == nil {
+			p.allSignalData[topic][signalName] = make(map[string]interface{})
+		}
+
+		if dynamicMessage == nil {
+			return
+		}
+
+		// Process nested dynamic message fields
+		currentNest := p.allSignalData[topic][signalName]
+		p.addNestedValues(currentNest.(map[string]interface{}), dynamicMessage, logTime)
+
+	} else {
+		// Non-dynamic message values are processed normally
+		if p.allSignalData[topic][signalName] == nil {
+			p.allSignalData[topic][signalName] = make([][]float64, 0)
+		}
+
+		p.allSignalData[topic][signalName] = append(p.allSignalData[topic][signalName].([][]float64), []float64{logTime - *p.firstTime, getFloatValueOfInterface(value)})
+	}
+}
+
+// Function to add nested values from dynamic message fields recursively
+func (p *Parser) addNestedValues(nestedMap map[string]interface{}, dynamicMessage *dynamic.Message, logTime float64) {
+	fieldNames := dynamicMessage.GetKnownFields()
+	// Get all the field descriptors associated with this message
+	for _, field := range fieldNames {
+		fieldName := field.GetName()
+
+		// Each dynamic message has field descriptors, not data. We need to extract those field descriptors and then use them
+		// to figure out what data values are in there. The value could be another map, a list of values, or just a single value.
+		// NOTE: We don't need to figure out what descriptors there are  because we already decoded these messages in the GetDecodedMessage logic,
+		// so they are just know associated with these dynamic.Message's.
+		fieldDescriptor := dynamicMessage.FindFieldDescriptorByName(fieldName)
+		if fieldDescriptor == nil {
+			continue
+		}
+
+		decodedValue := dynamicMessage.GetField(fieldDescriptor)
+		if decodedValue == nil {
+			continue
+		}
+
+		unboxedNested, isNestedMessage := decodedValue.(*dynamic.Message)
+		if isNestedMessage {
+			// If it is a nested message and another map doesn't exist for it, we will make one to use.
+			if _, ok := nestedMap[fieldName]; !ok {
+				nestedMap[fieldName] = make(map[string]interface{})
+			}
+
+			p.addNestedValues(nestedMap[fieldName].(map[string]interface{}), unboxedNested, logTime)
+		} else {
+			if _, ok := nestedMap[fieldName]; !ok {
+				nestedMap[fieldName] = make([][]float64, 0)
+			}
+
+			nestedMap[fieldName] = append(nestedMap[fieldName].([][]float64), []float64{logTime - *p.firstTime, getFloatValueOfInterface(decodedValue)})
+		}
+	}
+}
+
 func getFloatValueOfInterface(val interface{}) float64 {
+	if val == nil {
+		return 0
+	}
+
 	var out float64
 
 	switch x := val.(type) {

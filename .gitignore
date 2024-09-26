@@ -2,3 +2,5 @@
 *.mat
 /result
 *.h5
+*.json
+*.mcap

@@ -92,24 +92,6 @@ func (m *McapUtils) LoadAllSchemas(info *mcap.Info) error {
 	return nil
 }
 
-// func (m *McapUtils) parseDescriptor(b []byte) (*descriptorpb.FileDescriptorSet, error) {
-//     descriptor := &descriptorpb.FileDescriptorSet{}
-// 	if err := proto.Unmarshal(b, descriptor); err != nil {
-// 		return nil, err
-// 	}
-// 	return descriptor, nil
-// }
-//
-// func (m *McapUtils) LoadAllSchemas2(info *mcap.Info) error {
-// 	schemaList := info.Schemas
-//
-//     for i, schema := range schemaList {
-//         protoDescriptorSet :=
-//
-//
-//     }
-// }
-
 func (m *McapUtils) GetMcapSchemaList(reader *mcap.Reader) ([]string, error) {
 	mcapInfo, err := reader.Info()
 	if err != nil {

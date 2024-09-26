@@ -10,7 +10,7 @@ import (
 )
 
 // MCAP doesn't have a native protobuf wrapper for golang, so we have to
-// dynamically decode the schemas and messages
+// dynamically decode the schemas and messages ourselves :)
 
 type ProtobufUtils struct {
 	protoDescriptions  map[string]*desc.FileDescriptor
@@ -28,33 +28,30 @@ func NewProtobufUtils() *ProtobufUtils {
 	}
 }
 
-func (pb *ProtobufUtils) loadSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {
-	if schema.Name == "hytech_msgs.MCUCommandData" {
-		fmt.Println("")
+func (pb *ProtobufUtils) GetDecodedSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {
+	i, ok := pb.protoDescriptions[schema.Name]
+	if ok {
+		return i, nil
 	}
 
+	return pb.loadSchema(schema)
+}
+
+func (pb *ProtobufUtils) loadSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {
+	// We are using this as a cache so we can use the cached descriptors to decode new ones
 	fdSet := &pb.protoDescriptorSet
 	if err := proto.Unmarshal(schema.Data, *fdSet); err != nil {
 		return nil, fmt.Errorf("failed to parse schema data: %w", err)
 	}
 
-	//files := make([]*desc.FileDescriptor, len((*fdSet).GetFile()))
-	//success := false
-	//fileIdx := -1
-	//for i, fd := range (*fdSet).GetFile() {
-	//	file, err := desc.CreateFileDescriptor(fd)
-	//	if err != nil {
-	//		continue
-	//	}
-	//	success = true
-	//	files[i] = file
-	//	fileIdx = i
-	//	break
-	//}
-
 	fdSetFiles := (*fdSet).GetFile()
 	successfulFiles := make([]*desc.FileDescriptor, 0)
 	errFiles := make([]*descriptorpb.FileDescriptorProto, 0, len(fdSetFiles))
+
+	// Each MCAP schema can give us all the proto descriptors we need but not necessarily in the order we need them
+	// As far as I can tell, it is random depending on how we create the schema upon MCAP generation
+	// The way we can get around this is to decode as many schemas we possible, store these, and use them as dependencies
+	// to decode the higher level schemas which require them.
 	for range len(fdSetFiles) {
 		for _, fd := range fdSetFiles {
 			if len(successfulFiles) == len(fdSetFiles) {
@@ -78,15 +75,11 @@ func (pb *ProtobufUtils) loadSchema(schema *mcap.Schema) (*desc.FileDescriptor, 
 		}
 	}
 
-	if len(errFiles) != 0 {
+	if len(errFiles) != 0 || len(successfulFiles) == 0 {
 		return nil, fmt.Errorf("failed to create file descriptors for %v", errFiles)
 	}
 
-	if len(successfulFiles) == 0 {
-		return nil, nil
-	}
-
-	// To find the highestLevelFile, we need to find the one with the largest number of dependencies
+	// To find the highest level schema file, we need to find the one with the largest number of dependencies
 	maxDepLen := -1
 	var highestLevelFile *desc.FileDescriptor = nil
 	for _, succFile := range successfulFiles {
@@ -102,13 +95,4 @@ func (pb *ProtobufUtils) loadSchema(schema *mcap.Schema) (*desc.FileDescriptor, 
 	pb.protoDescriptorSet.File = append(pb.protoDescriptorSet.File, fdProto)
 
 	return highestLevelFile, nil
-}
-
-func (pb *ProtobufUtils) GetDecodedSchema(schema *mcap.Schema) (*desc.FileDescriptor, error) {
-	i, ok := pb.protoDescriptions[schema.Name]
-	if ok {
-		return i, nil
-	}
-
-	return pb.loadSchema(schema)
 }
