@@ -26,6 +26,18 @@ type Parser struct {
 	firstTime      *float64
 }
 
+func CreateNewParser(info *mcap.Info) *Parser {
+	parser := &Parser{
+		mcapUtils:      utils.NewMcapUtils(),
+		allSignalData:  make(map[string]map[string]interface{}),
+		failedMessages: make([][2]interface{}, 0),
+		firstTime:      nil,
+	}
+	parser.mcapUtils.LoadAllSchemas(info)
+
+	return parser
+}
+
 func main() {
 	argsWithoutProg := os.Args[1:]
 
@@ -53,14 +65,8 @@ func main() {
 		log.Fatalf("could not get mcap mesages: %v", err)
 	}
 
-	parser := Parser{
-		mcapUtils:      utils.NewMcapUtils(),
-		allSignalData:  make(map[string]map[string]interface{}),
-		failedMessages: make([][2]interface{}, 0),
-		firstTime:      nil,
-	}
+	parser := CreateNewParser(info)
 
-	parser.mcapUtils.LoadAllSchemas(info)
 	for {
 		schema, channel, message, err := message_iterator.NextInto(nil)
 		if errors.Is(err, io.EOF) {
@@ -79,9 +85,6 @@ func main() {
 		newFailedMessage := make([][2]interface{}, 0)
 
 		for _, failedMessage := range parser.failedMessages {
-			if schema.Name == "hytech_msgs.MCUCommandData" {
-				// fmt.Println("")
-			}
 			err = parser.processMessage(failedMessage[0].(*mcap.Message), failedMessage[1].(*mcap.Schema))
 			if err != nil {
 				newFailedMessage = append(newFailedMessage, [2]interface{}{failedMessage[0], failedMessage[1]})
@@ -183,7 +186,7 @@ func (p *Parser) addNestedValues(nestedMap map[string]interface{}, dynamicMessag
 
 		// Each dynamic message has field descriptors, not data. We need to extract those field descriptors and then use them
 		// to figure out what data values are in there. The value could be another map, a list of values, or just a single value.
-		// NOTE: We don't need to figure out what descriptors there are  because we already decoded these messages in the GetDecodedMessage logic,
+		// NOTE: We don't need to figure out what descriptors there are because we already decoded these messages in the GetDecodedMessage logic,
 		// so they are just know associated with these dynamic.Message's.
 		fieldDescriptor := dynamicMessage.FindFieldDescriptorByName(fieldName)
 		if fieldDescriptor == nil {
