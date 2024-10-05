@@ -128,7 +128,7 @@ func (p *Parser) processMessage(message *mcap.Message, schema *mcap.Schema) erro
 	}
 
 	if decodedMessage == nil || decodedMessage.Data == nil {
-		return fmt.Errorf("could not decode message: %v", decodedMessage)
+		return nil
 	}
 	signalValues := decodedMessage.Data
 
@@ -154,13 +154,13 @@ func (p *Parser) processMessage(message *mcap.Message, schema *mcap.Schema) erro
 
 func (p *Parser) processSignalValue(topic, signalName string, value interface{}, logTime float64) {
 	dynamicMessage, ok := value.(*dynamic.Message)
+	if dynamicMessage == nil {
+		return
+	}
+
 	if ok {
 		if p.allSignalData[topic][signalName] == nil {
 			p.allSignalData[topic][signalName] = make(map[string]interface{})
-		}
-
-		if dynamicMessage == nil {
-			return
 		}
 
 		// Process nested dynamic message fields
@@ -179,6 +179,9 @@ func (p *Parser) processSignalValue(topic, signalName string, value interface{},
 
 // Function to add nested values from dynamic message fields recursively
 func (p *Parser) addNestedValues(nestedMap map[string]interface{}, dynamicMessage *dynamic.Message, logTime float64) {
+	if dynamicMessage == nil {
+		return
+	}
 	fieldNames := dynamicMessage.GetKnownFields()
 	// Get all the field descriptors associated with this message
 	for _, field := range fieldNames {
@@ -231,6 +234,9 @@ func getFloatValueOfInterface(val interface{}) float64 {
 	case float32:
 		out = float64(x)
 	case string:
+		if x == "" {
+			return 0
+		}
 		i, err := strconv.Atoi(x)
 		if err != nil {
 			panic(err)
