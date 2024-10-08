@@ -18,5 +18,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
+	gonum.org/v1/hdf5 v0.0.0-20210714002203-8c5d23bc6946 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

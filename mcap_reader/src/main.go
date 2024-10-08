@@ -214,7 +214,11 @@ func (p *Parser) addNestedValues(nestedMap map[string]interface{}, dynamicMessag
 				nestedMap[fieldName] = make([][]float64, 0)
 			}
 
-			nestedMap[fieldName] = append(nestedMap[fieldName].([][]float64), []float64{logTime - *p.firstTime, getFloatValueOfInterface(decodedValue)})
+			nestedMapFieldLength := len(nestedMap[fieldName].([][]float64))
+
+			if nestedMapFieldLength == 0 || nestedMap[fieldName].([][]float64)[nestedMapFieldLength-1][0]+0.005 <= (logTime-*p.firstTime) {
+				nestedMap[fieldName] = append(nestedMap[fieldName].([][]float64), []float64{logTime - *p.firstTime, getFloatValueOfInterface(decodedValue)})
+			}
 		}
 	}
 }
