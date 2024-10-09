@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -26,9 +27,9 @@ type Parser struct {
 	firstTime      *float64
 }
 
-func CreateNewParser(info *mcap.Info) *Parser {
+func CreateNewParser(mcapUtils *utils.McapUtils, info *mcap.Info) *Parser {
 	parser := &Parser{
-		mcapUtils:      utils.NewMcapUtils(),
+		mcapUtils:      mcapUtils,
 		allSignalData:  make(map[string]map[string]interface{}),
 		failedMessages: make([][2]interface{}, 0),
 		firstTime:      nil,
@@ -65,7 +66,7 @@ func main() {
 		log.Fatalf("could not get mcap mesages: %v", err)
 	}
 
-	parser := CreateNewParser(info)
+	parser := CreateNewParser(mcapUtils, info)
 
 	for {
 		schema, channel, message, err := message_iterator.NextInto(nil)
@@ -154,9 +155,6 @@ func (p *Parser) processMessage(message *mcap.Message, schema *mcap.Schema) erro
 
 func (p *Parser) processSignalValue(topic, signalName string, value interface{}, logTime float64) {
 	dynamicMessage, ok := value.(*dynamic.Message)
-	if dynamicMessage == nil {
-		return
-	}
 
 	if ok {
 		if p.allSignalData[topic][signalName] == nil {
@@ -231,11 +229,11 @@ func getFloatValueOfInterface(val interface{}) float64 {
 	var out float64
 
 	switch x := val.(type) {
-	case int32:
+	case float32:
 		out = float64(x)
 	case uint64:
 		out = float64(x)
-	case float32:
+	case int32:
 		out = float64(x)
 	case string:
 		if x == "" {
@@ -252,6 +250,14 @@ func getFloatValueOfInterface(val interface{}) float64 {
 		} else {
 			out = 0
 		}
+	}
+
+	if math.IsInf(out, 1) {
+		out = math.MaxFloat32
+	} else if math.IsInf(out, -1) {
+		out = math.SmallestNonzeroFloat32
+	} else if math.IsNaN(out) {
+		out = math.MaxFloat32
 	}
 
 	return out
