@@ -21,18 +21,20 @@ import (
 )
 
 type Parser struct {
-	mcapUtils      *utils.McapUtils
-	allSignalData  map[string]map[string]interface{}
-	failedMessages [][2]interface{}
-	firstTime      *float64
+	firstTime       *float64
+	mcapUtils       *utils.McapUtils
+	allSignalData   map[string]map[string]interface{}
+	failedMessages  [][2]interface{}
+	hdf5Writer      *HDF5Writer
+	maxSignalLength int // Constantly updated so we know what the max len of a data slice is
 }
 
 func CreateNewParser(mcapUtils *utils.McapUtils, info *mcap.Info) *Parser {
 	parser := &Parser{
+		firstTime:      nil,
 		mcapUtils:      mcapUtils,
 		allSignalData:  make(map[string]map[string]interface{}),
 		failedMessages: make([][2]interface{}, 0),
-		firstTime:      nil,
 	}
 	parser.mcapUtils.LoadAllSchemas(info)
 
@@ -68,6 +70,13 @@ func main() {
 
 	parser := CreateNewParser(mcapUtils, info)
 
+	hdf5Writer, err := NewHDF5Writer(fmt.Sprintf("%s.h5", file.Name()))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	parser.hdf5Writer = hdf5Writer
+
 	for {
 		schema, channel, message, err := message_iterator.NextInto(nil)
 		if errors.Is(err, io.EOF) {
@@ -98,10 +107,31 @@ func main() {
 		}
 
 		parser.failedMessages = newFailedMessage
+
+		if parser.maxSignalLength > 100_000 {
+			err := parser.hdf5Writer.ChunkWrite(parser.allSignalData)
+			if err != nil {
+				log.Fatal(err)
+			}
+			parser.allSignalData = make(map[string]map[string]interface{})
+			parser.maxSignalLength = 0
+		}
 	}
 
 	if len(parser.failedMessages) != 0 {
 		fmt.Errorf("could not finish decoding all messages")
+	}
+
+	if parser.maxSignalLength > 0 {
+		err := parser.hdf5Writer.ChunkWrite(parser.allSignalData)
+		if err != nil {
+			return
+		}
+	}
+
+	err = parser.hdf5Writer.Close()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	// Serialize to JSON
@@ -147,13 +177,13 @@ func (p *Parser) processMessage(message *mcap.Message, schema *mcap.Schema) erro
 	}
 
 	for signalName, value := range signalValues {
-		p.processSignalValue(trimmedTopic, signalName, value, float64(decodedMessage.LogTime)/1e9)
+		p.processSignalValue(trimmedTopic, signalName, trimmedTopic+"."+signalName, value, float64(decodedMessage.LogTime)/1e9)
 	}
 
 	return nil
 }
 
-func (p *Parser) processSignalValue(topic, signalName string, value interface{}, logTime float64) {
+func (p *Parser) processSignalValue(topic, signalName, signalPath string, value interface{}, logTime float64) {
 	dynamicMessage, ok := value.(*dynamic.Message)
 
 	if ok {
@@ -163,7 +193,7 @@ func (p *Parser) processSignalValue(topic, signalName string, value interface{},
 
 		// Process nested dynamic message fields
 		currentNest := p.allSignalData[topic][signalName]
-		p.addNestedValues(currentNest.(map[string]interface{}), dynamicMessage, logTime)
+		p.addNestedValues(signalPath, currentNest.(map[string]interface{}), dynamicMessage, logTime)
 
 	} else {
 		// Non-dynamic message values are processed normally
@@ -172,18 +202,21 @@ func (p *Parser) processSignalValue(topic, signalName string, value interface{},
 		}
 
 		p.allSignalData[topic][signalName] = append(p.allSignalData[topic][signalName].([][]float64), []float64{logTime - *p.firstTime, getFloatValueOfInterface(value)})
+		p.maxSignalLength = max(p.maxSignalLength, len(p.allSignalData[topic][signalName].([][]float64)))
 	}
 }
 
 // Function to add nested values from dynamic message fields recursively
-func (p *Parser) addNestedValues(nestedMap map[string]interface{}, dynamicMessage *dynamic.Message, logTime float64) {
+func (p *Parser) addNestedValues(signalPath string, nestedMap map[string]interface{}, dynamicMessage *dynamic.Message, logTime float64) {
 	if dynamicMessage == nil {
 		return
 	}
 	fieldNames := dynamicMessage.GetKnownFields()
 	// Get all the field descriptors associated with this message
+	baseSignalPath := signalPath
 	for _, field := range fieldNames {
 		fieldName := field.GetName()
+		baseSignalPath += "/" + fieldName
 
 		// Each dynamic message has field descriptors, not data. We need to extract those field descriptors and then use them
 		// to figure out what data values are in there. The value could be another map, a list of values, or just a single value.
@@ -206,7 +239,7 @@ func (p *Parser) addNestedValues(nestedMap map[string]interface{}, dynamicMessag
 				nestedMap[fieldName] = make(map[string]interface{})
 			}
 
-			p.addNestedValues(nestedMap[fieldName].(map[string]interface{}), unboxedNested, logTime)
+			p.addNestedValues(signalPath, nestedMap[fieldName].(map[string]interface{}), unboxedNested, logTime)
 		} else {
 			if _, ok := nestedMap[fieldName]; !ok {
 				nestedMap[fieldName] = make([][]float64, 0)
@@ -216,8 +249,10 @@ func (p *Parser) addNestedValues(nestedMap map[string]interface{}, dynamicMessag
 
 			if nestedMapFieldLength == 0 || nestedMap[fieldName].([][]float64)[nestedMapFieldLength-1][0]+0.005 <= (logTime-*p.firstTime) {
 				nestedMap[fieldName] = append(nestedMap[fieldName].([][]float64), []float64{logTime - *p.firstTime, getFloatValueOfInterface(decodedValue)})
+				p.maxSignalLength = max(p.maxSignalLength, len(nestedMap[fieldName].([][]float64)))
 			}
 		}
+		baseSignalPath = signalPath
 	}
 }
 
