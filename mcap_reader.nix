@@ -6,6 +6,7 @@ buildGoModule rec {
   src = ./mcap_reader;
   vendorHash = "sha256-P8uEvkngir0xjgSgKC9et6lWz00rv6Pi3JIK9JAN0Rc=";
 
+
   meta = with lib; {
     description = "Reads and parses the mcap data";
     license = licenses.mit;

@@ -3,18 +3,21 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    gomod2nix = {
+      url = "github:tweag/gomod2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs }: 
+  outputs = { self, nixpkgs, gomod2nix }: 
     let 
       project_overlay = final: prev: {
         go_application = final.callPackage ./mcap_reader.nix { };
-        python_application = final.callPackage ./matlab_generator.nix { };
       };
       my_overlays = [ project_overlay ];
       pkgs = import nixpkgs {
         system = "x86_64-linux";
-        overlays = [ self.overlays.default ];
+        overlays = [ self.overlays.default gomod2nix.overlays.default ];
       };
     in 
     {
@@ -23,19 +26,21 @@
       packages.x86_64-linux =
         rec {
           go_application = pkgs.go_application;
-          python_application = pkgs.python_application;
           default = go_application;
         };
       
         devShells.x86_64-linux.default =
           pkgs.mkShell rec {
             name = "nix-devshell";
-            inputsFrom = [ pkgs.python_application ];
             packages = with pkgs; [
               # Development Tools
               mcap-cli
-              go_application
-              python_application
+              # go_application
+              go
+              gopls
+              gotools
+              go-tools
+              gomod2nix.packages.x86_64-linux.default
               python311Packages.scipy
             ];
 

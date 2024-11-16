@@ -34,6 +34,9 @@ schema = 3
   [mod."github.com/stretchr/testify"]
     version = "v1.9.0"
     hash = "sha256-uUp/On+1nK+lARkTVtb5RxlW15zxtw2kaAFuIASA+J0="
+  [mod."gonum.org/v1/hdf5"]
+    version = "v0.0.0-20210714002203-8c5d23bc6946"
+    hash = "sha256-GGOjE4u4/iebanShCzmjh80SiVpuo7SrVEGeXZlVSgo="
   [mod."google.golang.org/protobuf"]
     version = "v1.34.2"
     hash = "sha256-nMTlrDEE2dbpWz50eQMPBQXCyQh4IdjrTIccaU0F3m0="
